@@ -18,13 +18,13 @@ namespace clustering
 		static FeaturesWeights std_weights( size_t s );
 
 		DBSCAN(double eps, size_t min_elems, int num_threads=1);
+		DBSCAN();
 		~DBSCAN();
 
+		void init(double eps, size_t min_elems, int num_threads=1);
 		void fit( const ClusterData & C );
 		void fit_precomputed( const DistanceMatrix & D );
-
 		void wfit( const ClusterData & C, const FeaturesWeights & W );
-
 		void reset();
 
 		const Labels & get_labels() const;
@@ -39,6 +39,8 @@ namespace clustering
 		double m_eps;
 		size_t m_min_elems;
 		int m_num_threads;
+		double m_dmin;
+		double m_dmax;
 
 		Labels m_labels;
 	};

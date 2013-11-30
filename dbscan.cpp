@@ -38,11 +38,24 @@ namespace clustering
 		return ws;
 	}
 
+	DBSCAN::DBSCAN()
+	{
+
+	}
+
+	void DBSCAN::init(double eps, size_t min_elems, int num_threads)
+	{
+		m_eps = eps;
+		m_min_elems = min_elems;
+		m_num_threads = num_threads;
+	}
 
 	DBSCAN::DBSCAN(double eps, size_t min_elems, int num_threads)
 	: m_eps( eps )
 	, m_min_elems( min_elems )
 	, m_num_threads( num_threads )
+	, m_dmin(0.0)
+	, m_dmax(0.0)
 	{
 		reset();
 	}
@@ -71,9 +84,6 @@ namespace clustering
 	{
 		DBSCAN::ClusterData cl_d = C;
 
-		ublas::vector<double> data_min( cl_d.size2() );
-		ublas::vector<double> data_range( cl_d.size2() );
-
 		omp_set_dynamic(0);     
 		omp_set_num_threads( m_num_threads );
 		#pragma omp parallel for
@@ -83,13 +93,13 @@ namespace clustering
 
 			const auto r = minmax_element( col.begin(), col.end() );
 
-			data_min(i) = *r.first;
-			data_range(i) = *r.second - *r.first;
+			double data_min = *r.first;
+			double data_range = *r.second - *r.first;
 
-			if (data_range(i) == 0.0) { data_range(i) = 1.0; }
+			if (data_range == 0.0) { data_range = 1.0; }
 
-			const double scale = 1/data_range(i);
-			const double min = -1.0*data_min(i)*scale;
+			const double scale = 1/data_range;
+			const double min = -1.0*data_min*scale;
 
 			col *= scale;
 			col.plus_assign( ublas::scalar_vector< typename ublas::matrix_column<DBSCAN::ClusterData>::value_type >(col.size(), min) );
@@ -97,27 +107,43 @@ namespace clustering
 
 		// rows x rows
 		DBSCAN::DistanceMatrix d_m( cl_d.size1(), cl_d.size1() );
+		ublas::vector<double> d_max( cl_d.size1() );
+		ublas::vector<double> d_min( cl_d.size1() );
 
 		omp_set_dynamic(0);     
 		omp_set_num_threads( m_num_threads );
-		#pragma omp parallel for collapse(2)
+		#pragma omp parallel for
 		for (size_t i = 0; i < cl_d.size1(); ++i)
 		{
 			for (size_t j = 0; j < cl_d.size1(); ++j)	
 			{
-				if (i == j)
-				{
-					d_m(i, j) = 0.0;
-				}
-				else
+				d_m(i, j) = 0.0;
+
+				if (i != j)
 				{
 					ublas::matrix_row<DBSCAN::ClusterData> U (cl_d, i);
 					ublas::matrix_row<DBSCAN::ClusterData> V (cl_d, j);
 
-					d_m(i, j) = norm_2( ublas::element_prod( W, U -V ) );
+					int k = 0;
+					for (const auto e : ( U-V ) )
+					{
+						d_m(i, j) += fabs(e)*W[k];
+						++k;
+					}
 				}
 			}
+
+			const auto cur_row = ublas::matrix_row<DBSCAN::DistanceMatrix>(d_m, i);
+			const auto mm = minmax_element( cur_row.begin(), cur_row.end() );
+
+			d_max(i) = *mm.second;
+			d_min(i) = *mm.first;
 		}
+
+		m_dmin = *(min_element( d_min.begin(), d_min.end() ));
+		m_dmax = *(max_element( d_max.begin(), d_max.end() ));
+
+		m_eps = (m_dmax - m_dmin) * m_eps + m_dmin;
 
 		return d_m;
 	}
@@ -140,7 +166,7 @@ namespace clustering
 	{
 		std::vector<uint8_t> visited( dm.size1() );
 
-		uint32_t cluster_id = 1;
+		uint32_t cluster_id = 0;
 
 		for (uint32_t pid = 0; pid < dm.size1(); ++pid)
 		{

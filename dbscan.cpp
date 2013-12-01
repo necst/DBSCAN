@@ -115,7 +115,7 @@ namespace clustering
 		#pragma omp parallel for
 		for (size_t i = 0; i < cl_d.size1(); ++i)
 		{
-			for (size_t j = 0; j < cl_d.size1(); ++j)	
+			for (size_t j = i; j < cl_d.size1(); ++j)	
 			{
 				d_m(i, j) = 0.0;
 
@@ -127,9 +127,10 @@ namespace clustering
 					int k = 0;
 					for (const auto e : ( U-V ) )
 					{
-						d_m(i, j) += fabs(e)*W[k];
-						++k;
+						d_m(i, j) += fabs(e)*W[k++];
 					}
+
+					d_m(j, i) = d_m(i, j);
 				}
 			}
 

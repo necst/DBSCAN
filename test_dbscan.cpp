@@ -4,13 +4,13 @@ using namespace clustering;
 
 int main()
 {
-	DBSCAN::ClusterData cl_d = DBSCAN::gen_cluster_data( 3, 3 );
+	DBSCAN::ClusterData cl_d = DBSCAN::gen_cluster_data( 225, 10000 );
 
-	DBSCAN dbs(3.0, 5, 4);
+	DBSCAN dbs(0.1, 5, 1);
 
 	dbs.fit( cl_d );
 
-	std::cout << dbs << std::endl;
+	//std::cout << dbs << std::endl;
 
 	return 0;
 }

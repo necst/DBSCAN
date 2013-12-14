@@ -1,5 +1,9 @@
 #include <vector>
+#include <string>
+
 #include <boost/numeric/ublas/matrix.hpp>
+
+#include <pHash.h>
 
 using namespace boost::numeric;
 
@@ -8,11 +12,13 @@ namespace clustering
 	class DBSCAN
 	{
 	public:
+        typedef int Distance;
 		typedef ublas::vector<double> FeaturesWeights;
-		typedef ublas::matrix<double> ClusterData;
-		typedef ublas::matrix<double> DistanceMatrix;
+		typedef ublas::matrix<ulong64> ClusterData;
+		typedef ublas::matrix<Distance> DistanceMatrix;
 		typedef std::vector<uint32_t> Neighbors;
 		typedef std::vector<int32_t> Labels;
+		typedef std::vector<std::pair<int32_t, std::string>> VerboseLabels;
 
 		static ClusterData gen_cluster_data( size_t features_num, size_t elements_num );
 		static FeaturesWeights std_weights( size_t s );
@@ -28,7 +34,7 @@ namespace clustering
 		void reset();
 
 		const Labels & get_labels() const;
-	
+
 	private:
 
 		void prepare_labels( size_t s );
@@ -43,6 +49,7 @@ namespace clustering
 		double m_dmax;
 
 		Labels m_labels;
+        VerboseLabels v_labels;
 	};
 
 	std::ostream& operator<<(std::ostream& o, DBSCAN & d);

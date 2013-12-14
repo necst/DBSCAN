@@ -10,240 +10,263 @@
 
 namespace clustering
 {
-	DBSCAN::ClusterData DBSCAN::gen_cluster_data( size_t features_num, size_t elements_num )
-	{
-		DBSCAN::ClusterData cl_d( elements_num, features_num );
+    DBSCAN::ClusterData DBSCAN::gen_cluster_data( size_t features_num, size_t elements_num )
+    {
+        DBSCAN::ClusterData cl_d( elements_num, features_num );
 
-		for (size_t i = 0; i < elements_num; ++i)
-		{
-			for (size_t j = 0; j < features_num; ++j)	
-			{
-				cl_d(i, j) = (-1.0 + rand() * (2.0) / RAND_MAX);
-			}
-		}
+        //elements -> by row
+        for (size_t i = 0; i < elements_num; ++i)
+        {
+            //features -> by column
+            for (size_t j = 0; j < features_num; ++j)
+            {
+                cl_d(i, j) = (-1.0 + rand() * (2.0) / RAND_MAX);
+            }
+        }
 
-		return cl_d;
-	}
+        return cl_d;
+    }
 
-	DBSCAN::FeaturesWeights DBSCAN::std_weights( size_t s )
-	{
-		// num cols
-		DBSCAN::FeaturesWeights ws( s );
+    DBSCAN::FeaturesWeights DBSCAN::std_weights( size_t s )
+    {
+        // num cols
+        DBSCAN::FeaturesWeights ws( s );
 
-		for (size_t i = 0; i < s; ++i)
-		{
-			ws(i) = 1.0;
-		}
+        for (size_t i = 0; i < s; ++i)
+        {
+            ws(i) = 1.0;
+        }
 
-		return ws;
-	}
+        return ws;
+    }
 
-	DBSCAN::DBSCAN()
-	{
+    DBSCAN::DBSCAN()
+    {
 
-	}
+    }
 
-	void DBSCAN::init(double eps, size_t min_elems, int num_threads)
-	{
-		m_eps = eps;
-		m_min_elems = min_elems;
-		m_num_threads = num_threads;
-	}
+    void DBSCAN::init(double eps, size_t min_elems, int num_threads)
+    {
+        m_eps = eps;
+        m_min_elems = min_elems;
+        m_num_threads = num_threads;
+    }
 
-	DBSCAN::DBSCAN(double eps, size_t min_elems, int num_threads)
-	: m_eps( eps )
-	, m_min_elems( min_elems )
-	, m_num_threads( num_threads )
-	, m_dmin(0.0)
-	, m_dmax(0.0)
-	{
-		reset();
-	}
+    DBSCAN::DBSCAN(double eps, size_t min_elems, int num_threads)
+        : m_eps( eps )
+          , m_min_elems( min_elems )
+          , m_num_threads( num_threads )
+          , m_dmin(0.0)
+          , m_dmax(0.0)
+    {
+        reset();
+    }
 
-	DBSCAN::~DBSCAN()
-	{
+    DBSCAN::~DBSCAN()
+    {
 
-	}
+    }
 
-	void DBSCAN::reset()
-	{
-		m_labels.clear();
-	}
+    void DBSCAN::reset()
+    {
+        m_labels.clear();
+    }
 
-	void DBSCAN::prepare_labels( size_t s )
-	{
-		m_labels.resize(s);
+    void DBSCAN::prepare_labels( size_t s )
+    {
+        m_labels.resize(s);
 
-		for( auto & l : m_labels)
-		{
-			l = -1;
-		}
-	}
+        for( auto & l : m_labels)
+        {
+            l = -1;
+        }
+    }
 
-	const DBSCAN::DistanceMatrix DBSCAN::calc_dist_matrix( const DBSCAN::ClusterData & C, const DBSCAN::FeaturesWeights & W )
-	{
-		DBSCAN::ClusterData cl_d = C;
+    const DBSCAN::DistanceMatrix DBSCAN::calc_dist_matrix(
+            const DBSCAN::ClusterData & C, const DBSCAN::FeaturesWeights & W)
+    {
+        DBSCAN::ClusterData cl_d = C;
 
-		omp_set_dynamic(0);     
-		omp_set_num_threads( m_num_threads );
-		#pragma omp parallel for
-		for (size_t i = 0; i < cl_d.size2(); ++i)
-		{
-			ublas::matrix_column<DBSCAN::ClusterData>col(cl_d, i);
+        omp_set_dynamic(0);
+        omp_set_num_threads( m_num_threads );
 
-			const auto r = minmax_element( col.begin(), col.end() );
+        // by-column normalization
+#pragma omp parallel for
+        for (size_t i = 0; i < cl_d.size2(); ++i)
+        {
+            ublas::matrix_column<DBSCAN::ClusterData>col(cl_d, i);
 
-			double data_min = *r.first;
-			double data_range = *r.second - *r.first;
+            const auto r = minmax_element( col.begin(), col.end() );
 
-			if (data_range == 0.0) { data_range = 1.0; }
+            double data_min = *r.first;
+            double data_range = *r.second - *r.first;
 
-			const double scale = 1/data_range;
-			const double min = -1.0*data_min*scale;
+            if (data_range == 0.0) {
+                data_range = 1.0;
+            }
 
-			col *= scale;
-			col.plus_assign( ublas::scalar_vector< typename ublas::matrix_column<DBSCAN::ClusterData>::value_type >(col.size(), min) );
-		}
+            const double scale = 1/data_range;
+            const double min = -1.0 * data_min * scale;
 
-		// rows x rows
-		DBSCAN::DistanceMatrix d_m( cl_d.size1(), cl_d.size1() );
-		ublas::vector<double> d_max( cl_d.size1() );
-		ublas::vector<double> d_min( cl_d.size1() );
+            col *= scale;
+            col.plus_assign(
+                    ublas::scalar_vector< typename ublas::matrix_column<DBSCAN::ClusterData>::value_type >(col.size(), min) );
+        }
 
-		omp_set_dynamic(0);     
-		omp_set_num_threads( m_num_threads );
-		#pragma omp parallel for
-		for (size_t i = 0; i < cl_d.size1(); ++i)
-		{
-			for (size_t j = i; j < cl_d.size1(); ++j)	
-			{
-				d_m(i, j) = 0.0;
+        // rows x rows
+        DBSCAN::DistanceMatrix d_m( cl_d.size1(), cl_d.size1() );
+        ublas::vector<double> d_max( cl_d.size1() );
+        ublas::vector<double> d_min( cl_d.size1() );
 
-				if (i != j)
-				{
-					ublas::matrix_row<DBSCAN::ClusterData> U (cl_d, i);
-					ublas::matrix_row<DBSCAN::ClusterData> V (cl_d, j);
+        omp_set_dynamic(0);
+        omp_set_num_threads( m_num_threads );
+#pragma omp parallel for
+        for (size_t i = 0; i < cl_d.size1(); ++i)
+        {
+            for (size_t j = i; j < cl_d.size1(); ++j)
+            {
+                d_m(i, j) = 0.0;
 
-					int k = 0;
-					for (const auto e : ( U-V ) )
-					{
-						d_m(i, j) += fabs(e)*W[k++];
-					}
+                if (i != j)
+                {
+                    ublas::matrix_row<DBSCAN::ClusterData> U (cl_d, i);
+                    ublas::matrix_row<DBSCAN::ClusterData> V (cl_d, j);
 
-					d_m(j, i) = d_m(i, j);
-				}
-			}
+                    //distance computation between two elements (i.e., rows)
+                    int k = 0;
+                    for (const auto e : distance(U, V))
+                    {
+                        d_m(i, j) += fabs(e)*W[k++];
+                    }
 
-			const auto cur_row = ublas::matrix_row<DBSCAN::DistanceMatrix>(d_m, i);
-			const auto mm = minmax_element( cur_row.begin(), cur_row.end() );
+                    d_m(j, i) = d_m(i, j);
+                }
+            }
 
-			d_max(i) = *mm.second;
-			d_min(i) = *mm.first;
-		}
+            const auto cur_row = ublas::matrix_row<DBSCAN::DistanceMatrix>(d_m, i);
+            const auto mm = minmax_element( cur_row.begin(), cur_row.end() );
 
-		m_dmin = *(min_element( d_min.begin(), d_min.end() ));
-		m_dmax = *(max_element( d_max.begin(), d_max.end() ));
+            d_max(i) = *mm.second;
+            d_min(i) = *mm.first;
+        }
 
-		m_eps = (m_dmax - m_dmin) * m_eps + m_dmin;
+        m_dmin = *(min_element( d_min.begin(), d_min.end() ));
+        m_dmax = *(max_element( d_max.begin(), d_max.end() ));
 
-		return d_m;
-	}
+        m_eps = (m_dmax - m_dmin) * m_eps + m_dmin;
 
-	DBSCAN::Neighbors DBSCAN::find_neighbors(const DBSCAN::DistanceMatrix & D, uint32_t pid)
-	{
-		Neighbors ne;
+        return d_m;
+    }
 
-		for (uint32_t j = 0; j < D.size1(); ++j)
-		{
-			if 	( D(pid, j) <= m_eps )
-			{
-				ne.push_back(j);
-			}
-		}
-		return ne;
-	}
+    ublas::vector<DBSCAN::Distance> distance(
+            ublas::matrix_row<DBSCAN::ClusterData> & rowA,
+            ublas::matrix_row<DBSCAN::ClusterData> & rowB)
+    {
+        ublas::vector<DBSCAN::Distance> d(rowA.size());
 
-	void DBSCAN::dbscan( const DBSCAN::DistanceMatrix & dm )
-	{
-		std::vector<uint8_t> visited( dm.size1() );
+        for (size_t i = 0; i < rowA.size(); ++i)
+        {
+            d(i) = (DBSCAN::Distance)ph_hamming_distance((ulong64)rowA(i), (ulong64)rowB(i));
+        }
 
-		uint32_t cluster_id = 0;
+        return d;
+    }
 
-		for (uint32_t pid = 0; pid < dm.size1(); ++pid)
-		{
-			if ( !visited[pid] )
-			{  
-				visited[pid] = 1;
+    DBSCAN::Neighbors DBSCAN::find_neighbors(const DBSCAN::DistanceMatrix & D, uint32_t pid)
+    {
+        Neighbors ne;
 
-				Neighbors ne = find_neighbors(dm, pid );
+        for (uint32_t j = 0; j < D.size1(); ++j)
+        {
+            if 	( D(pid, j) <= m_eps )
+            {
+                ne.push_back(j);
+            }
+        }
+        return ne;
+    }
 
-				if (ne.size() >= m_min_elems)
-				{
-					m_labels[pid] = cluster_id;
+    void DBSCAN::dbscan( const DBSCAN::DistanceMatrix & dm )
+    {
+        std::vector<uint8_t> visited( dm.size1() );
 
-					for (uint32_t i = 0; i < ne.size(); ++i)
-					{
-						uint32_t nPid = ne[i];
+        uint32_t cluster_id = 0;
 
-						if ( !visited[nPid] )
-						{
-							visited[nPid] = 1;
+        for (uint32_t pid = 0; pid < dm.size1(); ++pid)
+        {
+            if ( !visited[pid] )
+            {
+                visited[pid] = 1;
 
-							Neighbors ne1 = find_neighbors(dm, nPid);
+                Neighbors ne = find_neighbors(dm, pid );
 
-							if ( ne1.size() >= m_min_elems )
-							{
-								for (const auto & n1 : ne1)
-								{
-									ne.push_back(n1);
-								}
-							}
-						}
+                if (ne.size() >= m_min_elems)
+                {
+                    m_labels[pid] = cluster_id;
 
-						if ( m_labels[nPid] == -1 )
-						{
-							m_labels[nPid] = cluster_id;
-						}
-					}
+                    for (uint32_t i = 0; i < ne.size(); ++i)
+                    {
+                        uint32_t nPid = ne[i];
 
-					++cluster_id;
-				}
-			}
-		}
-	}
+                        if ( !visited[nPid] )
+                        {
+                            visited[nPid] = 1;
 
-	void DBSCAN::fit( const DBSCAN::ClusterData & C ) 
-	{
-		const DBSCAN::FeaturesWeights W = DBSCAN::std_weights( C.size2() );
-		wfit( C, W );
-	}
-	void DBSCAN::fit_precomputed( const DBSCAN::DistanceMatrix & D ) 
-	{
-		prepare_labels( D.size1() );
-		dbscan( D );
-	}
+                            Neighbors ne1 = find_neighbors(dm, nPid);
 
-	void DBSCAN::wfit( const DBSCAN::ClusterData & C, const DBSCAN::FeaturesWeights & W )
-	{
-		prepare_labels( C.size1() );
-		const DBSCAN::DistanceMatrix D = calc_dist_matrix( C, W );
-		dbscan( D );
-	}
+                            if ( ne1.size() >= m_min_elems )
+                            {
+                                for (const auto & n1 : ne1)
+                                {
+                                    ne.push_back(n1);
+                                }
+                            }
+                        }
 
-	const DBSCAN::Labels & DBSCAN::get_labels() const
-	{
-		return m_labels;
-	}
+                        if ( m_labels[nPid] == -1 )
+                        {
+                            m_labels[nPid] = cluster_id;
+                        }
+                    }
 
-	std::ostream& operator<<(std::ostream& o, DBSCAN & d)
-	{
-		o << "[ ";
-		for ( const auto & l : d.get_labels() )
-		{
-			o << " " << l;
-		}
-		o << " ] " << std::endl;
+                    ++cluster_id;
+                }
+            }
+        }
+    }
 
-		return o;
-	}
+    void DBSCAN::fit( const DBSCAN::ClusterData & C )
+    {
+        const DBSCAN::FeaturesWeights W = DBSCAN::std_weights( C.size2() );
+        wfit( C, W );
+    }
+    void DBSCAN::fit_precomputed( const DBSCAN::DistanceMatrix & D )
+    {
+        prepare_labels( D.size1() );
+        dbscan( D );
+    }
+
+    void DBSCAN::wfit( const DBSCAN::ClusterData & C, const DBSCAN::FeaturesWeights & W )
+    {
+        prepare_labels( C.size1() );
+        const DBSCAN::DistanceMatrix D = calc_dist_matrix( C, W );
+        dbscan( D );
+    }
+
+    const DBSCAN::Labels & DBSCAN::get_labels() const
+    {
+        return m_labels;
+    }
+
+    std::ostream& operator<<(std::ostream& o, DBSCAN & d)
+    {
+        o << "[";
+        for ( const auto & l : d.get_labels() )
+        {
+            o << " " << l;
+        }
+        o << "] " << std::endl;
+
+        return o;
+    }
 }

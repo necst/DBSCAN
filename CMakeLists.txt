@@ -7,9 +7,13 @@ set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 
+find_package(Boost 1.54.0 COMPONENTS timer system)
+
 add_definitions(-DBOOST_UBLAS_NDEBUG)
 
-add_library(dbscan dbscan.cpp)
+if(Boost_FOUND)
+    add_library(dbscan dbscan.cpp)
 
-add_executable(test_dbscan test_dbscan.cpp)
-target_link_libraries(test_dbscan dbscan pHash)
+    add_executable(test_dbscan test_dbscan.cpp)
+    target_link_libraries(test_dbscan dbscan ${Boost_LIBRARIES} pHash)
+endif()
